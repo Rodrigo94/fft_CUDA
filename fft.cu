@@ -116,7 +116,7 @@ int main() {
       endl;
   }
 
-  cout << "Blablbebea" << endl;
+  cout << "Acabei o procedimento..." << endl;
   int d;
   cin >> d;
 }
