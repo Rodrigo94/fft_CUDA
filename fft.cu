@@ -45,6 +45,7 @@ __global__ void bit_reverse_copy(cuDoubleComplex* A, int size, cuDoubleComplex* 
 int main() {
   int p;
   cin >> p;
+
   int n = (int)pow(2, p);
   int size = n*sizeof(cuDoubleComplex);
   cuDoubleComplex* A = (cuDoubleComplex*)malloc(size);
