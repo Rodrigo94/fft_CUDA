@@ -28,7 +28,7 @@ __global__ void fft(cuDoubleComplex* A, int m) {
 }
 
 //Faz a reversÃo de bits do Ãndice
-__global__ void bit_reverse_copy(cuDoubleComplex* A, int size) {
+__global__ void bit_reverse_copy(cuDoubleComplex* A, int size, cuDoubleComplex* R) {
   int n = blockIdx.x*blockDim.x + threadIdx.x;
   if ( n > size ) return;
   int s = (int)log2((double)size);
@@ -37,12 +37,12 @@ __global__ void bit_reverse_copy(cuDoubleComplex* A, int size) {
     revn += ((n >> i) & 1) << ((s - 1) - i);
   }
   cuDoubleComplex aux = A[n];
-  A[n] = A[revn];
-  A[revn] = aux;
+  //A[n] = A[revn];
+  R[revn] = aux;
 }
 
 int main() {
-  int n = pow(2, 5);
+  int n = (int)pow(2, 5);
   int size = n*sizeof(cuDoubleComplex);
   cuDoubleComplex* A = (cuDoubleComplex*)malloc(size);
 
@@ -56,18 +56,34 @@ int main() {
       A[k].y = 0;
     }
   }
-  cuDoubleComplex* A_d;
+  cuDoubleComplex* A_d, *B_d;
   cudaMalloc(&A_d, size);
+  cudaMalloc(&B_d, size);
   cudaMemcpy(A_d, A, size, cudaMemcpyHostToDevice);
 
-  int t = (n / 2) > 512 ? 512 : (n / 2);
+  int t = (n) > 512 ? 512 : (n);
   dim3 g(t);
-  dim3 b((n / 2) / t);
+  dim3 b((n) / t);
 
-  cout << "bg: " << g.x << " " << b.x << endl;
+  //cout << "bg: " << g.x << " " << b.x << endl;
 
 
-  bit_reverse_copy << <g, b >> >(A_d, n);
+  bit_reverse_copy << <g, b >> >(A_d, n, B_d);
+
+  /*cudaMemcpy(A, B_d, size, cudaMemcpyDeviceToHost);
+
+  for ( int k = 0; k < 32; k++ ) {
+    cout <<
+      A[k].x
+      <<
+      " "
+      <<
+      A[k].y
+      <<
+      endl;
+  }
+
+  cout << "FIM BIT REVERSE" << endl;*/
 
   /*cuDoubleComplex* B = (cuDoubleComplex*)malloc(size);
   cudaMemcpy(B, A_d, size, cudaMemcpyDeviceToHost);
@@ -102,12 +118,12 @@ int main() {
     dim3 grid(x, y);
     dim3 blocks(bx, by);
     //cout << "Chamei fft:" << endl;
-    fft << <grid, blocks >> >(A_d, m);
-    cout << i << " " << cudaGetErrorString(cudaGetLastError()) << endl;
+    fft << <grid, blocks >> >(B_d, m);
+    //cout << i << " " << cudaGetErrorString(cudaGetLastError()) << endl;
     //cout << "Sai do fft:" << endl;
     m *= 2;
   }
-  cudaMemcpy(A, A_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(A, B_d, size, cudaMemcpyDeviceToHost);
 
   for ( int k = 0; k < 32; k++ ) {
     cout <<
@@ -119,6 +135,10 @@ int main() {
       <<
       endl;
   }
+
+  cudaFree(A_d);
+  cudaFree(B_d);
+  free(A);
 
   cout << "Acabei o procedimento..." << endl;
   int d;
