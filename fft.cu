@@ -3,6 +3,8 @@
 #include<math.h>
 #include<math_constants.h>
 
+//Pode ir
+
 using namespace std;
 
 //Faz exponencial complexa. O parametro Ã o coeficiente complexo do expoente
@@ -58,9 +60,11 @@ int main() {
   cudaMalloc(&A_d, size);
   cudaMemcpy(A_d, A, size, cudaMemcpyHostToDevice);
 
-  int t = n > 512 ? 512 : n;
+  int t = (n / 2) > 512 ? 512 : (n / 2);
   dim3 g(t);
-  dim3 b(n / t);
+  dim3 b((n / 2) / t);
+
+  cout << "bg: " << g.x << " " << b.x << endl;
 
 
   bit_reverse_copy << <g, b >> >(A_d, n);
@@ -94,11 +98,11 @@ int main() {
     int x = threads / y;
     int by = nk / y;
     int bx = nj / x;
-    cout << "Elas sao: " << x << " " << y << " " << bx << " " << by << endl;
+    //cout << "Elas sao: " << x << " " << y << " " << bx << " " << by << endl;
     dim3 grid(x, y);
     dim3 blocks(bx, by);
     //cout << "Chamei fft:" << endl;
-    //fft << < grid, blocks >> >(A_d, m);
+    fft << <grid, blocks >> >(A_d, m);
     cout << i << " " << cudaGetErrorString(cudaGetLastError()) << endl;
     //cout << "Sai do fft:" << endl;
     m *= 2;
