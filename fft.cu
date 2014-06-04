@@ -2,6 +2,7 @@
 #include<iostream>
 #include<math.h>
 #include<math_constants.h>
+#include <time.h>
 
 //Pode ir
 
@@ -42,20 +43,26 @@ __global__ void bit_reverse_copy(cuDoubleComplex* A, int size, cuDoubleComplex* 
 }
 
 int main() {
-  int n = (int)pow(2, 5);
+  int p;
+  cin >> p;
+  int n = (int)pow(2, p);
   int size = n*sizeof(cuDoubleComplex);
   cuDoubleComplex* A = (cuDoubleComplex*)malloc(size);
 
 
-  for ( int k = 0; k < 32; k++ ) {
-    if ( k < 16 ) {
+  for ( int k = 0; k < n; k++ ) {
+    A[k].x = k % 100;
+    A[k].y = 0;
+    /*if ( k < 16 ) {
       A[k].x = 0;
       A[k].y = 0;
     } else {
       A[k].x = 1;
       A[k].y = 0;
-    }
+    }*/
   }
+
+  clock_t start = clock();
   cuDoubleComplex* A_d, *B_d;
   cudaMalloc(&A_d, size);
   cudaMalloc(&B_d, size);
@@ -125,6 +132,12 @@ int main() {
   }
   cudaMemcpy(A, B_d, size, cudaMemcpyDeviceToHost);
 
+  cudaFree(A_d);
+  cudaFree(B_d);
+  clock_t end = clock();
+  float sec = (float)(end - start) / CLOCKS_PER_SEC;
+  cout << sec << " seconds elapsed!" << endl;
+
   for ( int k = 0; k < 32; k++ ) {
     cout <<
       A[k].x
@@ -135,9 +148,6 @@ int main() {
       <<
       endl;
   }
-
-  cudaFree(A_d);
-  cudaFree(B_d);
   free(A);
 
   cout << "Acabei o procedimento..." << endl;
