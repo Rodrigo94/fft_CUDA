@@ -2,6 +2,7 @@
 #include<iostream>
 #include<math.h>
 #include<math_constants.h>
+#include<stdio.h>
 #include <time.h>
 
 //Pode ir
@@ -15,10 +16,11 @@ __host__ __device__ cuDoubleComplex complexp(double exp) {
   return make_cuDoubleComplex(a, bi);
 }
 
-__global__ void fft(cuDoubleComplex* A, int m) {
+__global__ void fft(cuDoubleComplex* A, long int m) {
   //Paraleliza a partir do segundo for
-  int k = (blockIdx.y*blockDim.y + threadIdx.y)*m;
-  int j = blockIdx.x*blockDim.x + threadIdx.x;
+  unsigned int th = blockIdx.x*blockDim.x + threadIdx.x;
+  unsigned int k = th / (m / 2);
+  unsigned int j = th % (m / 2);
   //Assume que a propriedade e^x*e^y = e^(x+y) Ã© valida para 
   //exponencial de numeros complexos
   cuDoubleComplex w = complexp(((2 * CUDART_PI) / m)*j);
@@ -29,7 +31,7 @@ __global__ void fft(cuDoubleComplex* A, int m) {
 }
 
 //Faz a reversÃo de bits do Ãndice
-__global__ void bit_reverse_copy(cuDoubleComplex* A, int size, cuDoubleComplex* R) {
+__global__ void bit_reverse_copy(cuDoubleComplex* A, long int size, cuDoubleComplex* R) {
   int n = blockIdx.x*blockDim.x + threadIdx.x;
   if ( n > size ) return;
   int s = (int)log2((double)size);
@@ -38,7 +40,6 @@ __global__ void bit_reverse_copy(cuDoubleComplex* A, int size, cuDoubleComplex* 
     revn += ((n >> i) & 1) << ((s - 1) - i);
   }
   cuDoubleComplex aux = A[n];
-  //A[n] = A[revn];
   R[revn] = aux;
 }
 
@@ -46,108 +47,85 @@ int main() {
   int p;
   cin >> p;
 
-  int n = (int)pow(2, p);
-  int size = n*sizeof(cuDoubleComplex);
+  long int n = (long int)pow(2, p);
+  size_t size = n*sizeof(cuDoubleComplex);
   cuDoubleComplex* A = (cuDoubleComplex*)malloc(size);
 
 
-  for ( int k = 0; k < n; k++ ) {
-    A[k].x = k % 100;
-    A[k].y = 0;
-    /*if ( k < 16 ) {
-      A[k].x = 0;
-      A[k].y = 0;
-    } else {
+  for ( long int k = 0; k < n; k++ ) {
+    /*A[k].x = sin(k * (2 * CUDART_PI_HI / n) );
+    A[k].y = 0;*/
+    if ( k < n / 2 ) {
       A[k].x = 1;
       A[k].y = 0;
-    }*/
+    } else {
+      A[k].x = 0;
+      A[k].y = 0;
+    }
   }
 
-  clock_t start = clock();
+  cudaEvent_t stt, stp, stt2, stp2;
+  cudaEventCreate(&stt);
+  cudaEventCreate(&stp);
+  cudaEventCreate(&stt2);
+  cudaEventCreate(&stp2);
+
+  cudaEventRecord(stt);
+
+
   cuDoubleComplex* A_d, *B_d;
   cudaMalloc(&A_d, size);
   cudaMalloc(&B_d, size);
   cudaMemcpy(A_d, A, size, cudaMemcpyHostToDevice);
 
-  int t = (n) > 512 ? 512 : (n);
-  dim3 g(t);
-  dim3 b((n) / t);
 
-  //cout << "bg: " << g.x << " " << b.x << endl;
+  cudaEventRecord(stt2);
+
+
+  unsigned int t = (n) > 512 ? 512 : (n);
+  unsigned int bt = (unsigned int)((n) / t);
+  //bt = (bt == 0) ? 1 : 0; //trata o caso de N < 512. Os outros casos a divisão da sempre exata devido a entrada ser potencia de 2
+  dim3 g(t);
+  dim3 b(bt);
 
 
   bit_reverse_copy << <g, b >> >(A_d, n, B_d);
 
-  /*cudaMemcpy(A, B_d, size, cudaMemcpyDeviceToHost);
-
-  for ( int k = 0; k < 32; k++ ) {
-    cout <<
-      A[k].x
-      <<
-      " "
-      <<
-      A[k].y
-      <<
-      endl;
-  }
-
-  cout << "FIM BIT REVERSE" << endl;*/
-
-  /*cuDoubleComplex* B = (cuDoubleComplex*)malloc(size);
-  cudaMemcpy(B, A_d, size, cudaMemcpyDeviceToHost);
-
-  for ( int k = 0; k < 32; k++ ) {
-  cout <<
-  B[k].x
-  <<
-  " "
-  <<
-  B[k].y
-  <<
-  endl;
-  }*/
-
-  int m = 2;
+  long int m = 2;
   for ( int i = 1; i <= log2((double)n); i++ ) {
-    //Divide o trabalho proporcionalmente
-    int nk = n / m;
-    int nj = m / 2;
-    int num = nj* nk;
-    double prop = ((double)nk) / ((double)num);
-    int threads = num > 512 ? 512 : num;
-    int py = (int)(threads*prop);
-    //Trata o caso de a proporÃÃo de trabalho de k ser 
-    //tÃ£o pequena que d menos que uma thread por bloco
-    int y = (py >= 1) ? py : 1;
-    int x = threads / y;
-    int by = nk / y;
-    int bx = nj / x;
-    //cout << "Elas sao: " << x << " " << y << " " << bx << " " << by << endl;
-    dim3 grid(x, y);
-    dim3 blocks(bx, by);
-    //cout << "Chamei fft:" << endl;
+    unsigned int x = ((n / 2) < 512) ? (n / 2) : 512;
+    unsigned int bx = ((n / 2) / x);
+    //bx = (bx == 0) ? 1 : bx;
+    dim3 grid(x);
+    dim3 blocks(bx);
     fft << <grid, blocks >> >(B_d, m);
-    //cout << i << " " << cudaGetErrorString(cudaGetLastError()) << endl;
-    //cout << "Sai do fft:" << endl;
     m *= 2;
   }
+  cudaEventRecord(stp2);
   cudaMemcpy(A, B_d, size, cudaMemcpyDeviceToHost);
 
   cudaFree(A_d);
   cudaFree(B_d);
-  clock_t end = clock();
-  float sec = (float)(end - start) / CLOCKS_PER_SEC;
-  cout << sec << " seconds elapsed!" << endl;
 
-  for ( int k = 0; k < 32; k++ ) {
-    cout <<
-      A[k].x
-      <<
-      " "
-      <<
-      A[k].y
-      <<
-      endl;
+  cudaEventRecord(stp);
+
+  cudaEventSynchronize(stp);
+  cudaEventSynchronize(stp2);
+
+  float milliseconds = 0;
+  float milliseconds2 = 0;
+  cudaEventElapsedTime(&milliseconds, stt, stp);
+  cudaEventElapsedTime(&milliseconds2, stt2, stp2);
+
+  cout << milliseconds << " seconds elapsed! (With copy)" << endl;
+  cout << milliseconds2 << " seconds elapsed! (Without copy)" << endl;
+
+
+  FILE * out;
+  out = fopen("teste_cuda.txt", "a+");
+  if ( out ) {
+    fprintf(out, "%lf  -  %lf\n", milliseconds, milliseconds2);
+    fclose(out);
   }
   free(A);
 
